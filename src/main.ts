@@ -31,7 +31,9 @@ let trajectoryFrame = 0
 function draw(progress = 1) {
   const canvas = $('trajectory') as HTMLCanvasElement, ctx = canvas.getContext('2d')!, current = shot()
   const delta = { speed: numeric('speed-delta'), launch: numeric('launch-delta'), spin: numeric('spin-delta'), side: numeric('side-delta') }
-  const targetCarry = current.carry + delta.speed * .62 + delta.launch * 2.7 - delta.spin * .004
+  const speedRatio = current.speed > 0 ? (current.speed + delta.speed) / current.speed : 1
+  const speedCarryGain = current.carry * (speedRatio * speedRatio - 1)
+  const targetCarry = Math.max(1, current.carry + speedCarryGain + delta.launch * 2.7 - delta.spin * .004)
   const currentApex = Math.max(8, 18 + current.launch * 1.05 - current.spin * .0015), targetApex = Math.max(8, 18 + (current.launch + delta.launch) * 1.05 - (current.spin + delta.spin) * .0015)
   ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = 'rgba(144,178,152,.16)'; ctx.lineWidth = 1
   for (let y = 40; y < 290; y += 40) { ctx.beginPath(); ctx.moveTo(28, y); ctx.lineTo(740, y); ctx.stroke() }
@@ -49,17 +51,17 @@ function draw(progress = 1) {
   glow.addColorStop(0, 'rgba(255,255,255,.95)'); glow.addColorStop(.2, 'rgba(101,224,197,.8)'); glow.addColorStop(1, 'rgba(101,224,197,0)')
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ball.x, ball.y, 18, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#f8fffb'; ctx.beginPath(); ctx.arc(ball.x, ball.y, 4, 0, Math.PI * 2); ctx.fill()
-  $('gain').textContent = `${signed(targetCarry - current.carry, 1)}m`; $('dispersion').textContent = `${signed(Math.abs((current.side + delta.side) * .014), 1)}m`; $('apex').textContent = `${targetApex.toFixed(1)}m`; $('advice').textContent = targetCarry - current.carry > 4 ? '런치앵글을 높이고 백스핀을 낮춰 캐리를 확보하세요' : '사이드스핀을 줄여 좌우 편차를 먼저 낮춰보세요'
+  $('gain').textContent = `${signed(targetCarry - current.carry, 1)}m`; $('dispersion').textContent = `${signed(Math.abs((current.side + delta.side) * .014), 1)}m`; $('apex').textContent = `${targetApex.toFixed(1)}m`; $('advice').textContent = targetCarry - current.carry > 4 ? `캐리 ${current.carry.toFixed(0)}m → ${targetCarry.toFixed(0)}m, 런치앵글을 높이고 스핀을 줄여보세요` : '사이드스핀을 줄여 좌우 편차를 먼저 낮춰보세요'
   $('speed-output').textContent = `${signed(delta.speed)} km/h`; $('launch-output').textContent = `${signed(delta.launch, 1)}°`; $('spin-output').textContent = `${signed(delta.spin)} rpm`; $('side-output').textContent = `${signed(delta.side)} rpm`
 }
 
-function animateTrajectory() { cancelAnimationFrame(trajectoryFrame); const started = performance.now(); const duration = 1100; const tick = (now: number) => { const progress = Math.min(1, (now - started) / duration); const eased = 1 - Math.pow(1 - progress, 3); draw(eased); if (progress < 1) trajectoryFrame = requestAnimationFrame(tick) }; trajectoryFrame = requestAnimationFrame(tick) }
-function apply(data: Partial<Shot>) { const fields: Record<string, keyof Shot> = { club: 'club', speed: 'speed', launch: 'launch', spin: 'spin', side: 'side', carry: 'carry' }; Object.entries(fields).forEach(([id, key]) => { if (data[key] !== undefined) $<HTMLInputElement>(id).value = String(data[key]) }); animateTrajectory() }
+function animateTrajectory(repeats = 3) { cancelAnimationFrame(trajectoryFrame); const started = performance.now(); const duration = 880; const gap = 90; const cycle = duration + gap; const total = cycle * repeats; const tick = (now: number) => { const elapsed = now - started; const progressInCycle = Math.min(1, (elapsed % cycle) / duration); const eased = 1 - Math.pow(1 - progressInCycle, 3); draw(eased); if (elapsed < total) trajectoryFrame = requestAnimationFrame(tick); else draw(1) }; trajectoryFrame = requestAnimationFrame(tick) }
+function apply(data: Partial<Shot>) { const fields: Record<string, keyof Shot> = { club: 'club', speed: 'speed', launch: 'launch', spin: 'spin', side: 'side', carry: 'carry' }; Object.entries(fields).forEach(([id, key]) => { if (data[key] !== undefined) $<HTMLInputElement>(id).value = String(data[key]) }); animateTrajectory(3) }
 function history() { return JSON.parse(localStorage.getItem('golfshot-history') || '[]') as Shot[] }
 function renderHistory() { const items = history(); $('count').textContent = `${items.length} SHOTS`; $('history-list').innerHTML = items.length ? items.slice(0, 6).map((item) => `<div class="history-row"><strong>${item.club}</strong><span>${item.carry}m · ${item.speed}km/h · ${item.launch}°</span></div>`).join('') : '<p class="empty">저장된 샷이 없습니다.</p>' }
 
-document.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach((field) => field.addEventListener('input', animateTrajectory))
-document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((field) => field.addEventListener('input', animateTrajectory))
+document.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach((field) => field.addEventListener('input', () => animateTrajectory(3)))
+document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((field) => field.addEventListener('input', () => animateTrajectory(3)))
 $('demo').addEventListener('click', () => { apply(demo); toast('데모 샷 데이터를 불러왔습니다.') })
 $('save').addEventListener('click', () => { localStorage.setItem('golfshot-history', JSON.stringify([shot(), ...history()].slice(0, 20))); renderHistory(); toast('샷을 히스토리에 저장했습니다.') })
 function setShotFile(file: File) {
